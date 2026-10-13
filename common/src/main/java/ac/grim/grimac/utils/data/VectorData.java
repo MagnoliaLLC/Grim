@@ -9,6 +9,31 @@ import org.checkerframework.checker.nullness.qual.MonotonicNonNull;
 import java.util.Objects;
 
 public class VectorData {
+    public static final class MoveVectorData extends VectorData {
+        public int x;
+        public int z;
+
+        public MoveVectorData(Vector3dm vector, VectorData lastVector, VectorType vectorType, int x, int z) {
+            super(vector, lastVector, vectorType);
+            this.x = x;
+            this.z = z;
+
+            if (x != 0 || z != 0) {
+                addVectorType(VectorType.WithInput);
+            }
+        }
+
+        public MoveVectorData(Vector3dm vector, VectorType vectorType, int x, int z) {
+            super(vector, vectorType);
+            this.x = x;
+            this.z = z;
+
+            if (x != 0 || z != 0) {
+                addVectorType(VectorType.WithInput);
+            }
+        }
+    }
+
     public final VectorType vectorType;
     public VectorData lastVector;
     public VectorData preUncertainty;
@@ -17,7 +42,7 @@ public class VectorData {
     public IndexedVector3d stuckSpeedMultiplier = StuckSpeed.NONE;
 
     @Getter
-    private boolean isKnockback, firstBreadKb, isExplosion, firstBreadExplosion, isTrident, isZeroPointZeroThree, isSwimHop, isFlipSneaking, isFlipItem, isJump, isAttackSlow = false;
+    private boolean isKnockback, firstBreadKb, isExplosion, firstBreadExplosion, isTrident, isZeroPointZeroThree, isSwimHop, isFlipSneaking, isFlipItem, isJump, isAttackSlow = false, isWithInput = false;
 
     // For handling replacing the type of vector it is while keeping data
     public VectorData(Vector3dm vector, VectorData lastVector, VectorType vectorType) {
@@ -39,6 +64,7 @@ public class VectorData {
             preUncertainty = lastVector.preUncertainty;
             isAttackSlow = lastVector.isAttackSlow;
             input = lastVector.input;
+            isWithInput = lastVector.isWithInput;
             stuckSpeedMultiplier = lastVector.stuckSpeedMultiplier;
         }
 
@@ -72,12 +98,12 @@ public class VectorData {
         if (this == o) return true;
         if (o == null || getClass() != o.getClass()) return false;
         VectorData that = (VectorData) o;
-        return isKnockback == that.isKnockback && firstBreadKb == that.firstBreadKb && isExplosion == that.isExplosion && firstBreadExplosion == that.firstBreadExplosion && isTrident == that.isTrident && isZeroPointZeroThree == that.isZeroPointZeroThree && isSwimHop == that.isSwimHop && isFlipSneaking == that.isFlipSneaking && isFlipItem == that.isFlipItem && isJump == that.isJump && isAttackSlow == that.isAttackSlow && vectorType == that.vectorType && Objects.equals(lastVector, that.lastVector) && Objects.equals(preUncertainty, that.preUncertainty) && Objects.equals(vector, that.vector) && Objects.equals(stuckSpeedMultiplier, that.stuckSpeedMultiplier);
+        return isKnockback == that.isKnockback && firstBreadKb == that.firstBreadKb && isExplosion == that.isExplosion && firstBreadExplosion == that.firstBreadExplosion && isTrident == that.isTrident && isZeroPointZeroThree == that.isZeroPointZeroThree && isSwimHop == that.isSwimHop && isFlipSneaking == that.isFlipSneaking && isFlipItem == that.isFlipItem && isJump == that.isJump && isAttackSlow == that.isAttackSlow && vectorType == that.vectorType && Objects.equals(lastVector, that.lastVector) && Objects.equals(preUncertainty, that.preUncertainty) && Objects.equals(vector, that.vector);
     }
 
     @Override
     public int hashCode() {
-        return Objects.hash(vectorType, lastVector, preUncertainty, vector, stuckSpeedMultiplier, isKnockback, firstBreadKb, isExplosion, firstBreadExplosion, isTrident, isZeroPointZeroThree, isSwimHop, isFlipSneaking, isFlipItem, isJump, isAttackSlow);
+        return Objects.hash(vectorType, lastVector, preUncertainty, vector, isKnockback, firstBreadKb, isExplosion, firstBreadExplosion, isTrident, isZeroPointZeroThree, isSwimHop, isFlipSneaking, isFlipItem, isJump, isAttackSlow);
     }
 
     public void addVectorType(VectorType type) {
@@ -93,6 +119,7 @@ public class VectorData {
             case Flip_Use_Item -> isFlipItem = true;
             case Jump -> isJump = true;
             case AttackSlow -> isAttackSlow = true;
+            case WithInput -> isWithInput = true;
         }
     }
 
@@ -119,6 +146,7 @@ public class VectorData {
         Explosion,
         FirstBreadExplosion,
         InputResult,
+        WithInput,
         StuckMultiplier,
         Spectator,
         Dead,

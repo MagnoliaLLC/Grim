@@ -1,36 +1,37 @@
 package ac.grim.grimac.platform.fabric.mixins;
 
-import com.mojang.authlib.GameProfile;
-import net.minecraft.core.BlockPos;
+import ac.grim.grimac.GrimAPI;
+import ac.grim.grimac.platform.fabric.inject.FabricServerPlayerHandle;
+import ac.grim.grimac.platform.fabric.player.FabricPlatformPlayerFactory;
 import net.minecraft.network.chat.Component;
 import net.minecraft.server.level.ServerPlayer;
-import net.minecraft.world.entity.player.Player;
-import net.minecraft.world.level.Level;
 import org.spongepowered.asm.mixin.Implements;
 import org.spongepowered.asm.mixin.Interface;
 import org.spongepowered.asm.mixin.Mixin;
+import org.spongepowered.asm.mixin.injection.At;
+import org.spongepowered.asm.mixin.injection.Inject;
+import org.spongepowered.asm.mixin.injection.callback.CallbackInfo;
 
 import java.util.UUID;
 
 @Mixin(ServerPlayer.class)
 @Implements(@Interface(iface = ac.grim.grimac.platform.fabric.inject.FabricServerPlayerHandle.class, prefix = "grim$"))
-abstract class FabricIntermediaryServerPlayerMixin extends Player {
+abstract class FabricIntermediaryServerPlayerMixin {
 
-    public FabricIntermediaryServerPlayerMixin(Level level, BlockPos blockPos, GameProfile gameProfile) {
-        super(level, blockPos, gameProfile);
+    public boolean grim$isSneaking() {
+        return ((ServerPlayer) (Object) this).isShiftKeyDown();
     }
 
-    public void grim$resyncSharedFlags() {
-        this.getEntityData().getItem(DATA_SHARED_FLAGS_ID).setDirty(true);
-        this.getEntityData().isDirty = true;
+    public void grim$setSneaking(boolean sneaking) {
+        ((ServerPlayer) (Object) this).setShiftKeyDown(sneaking);
     }
 
     public boolean grim$isDead() {
-        return this.isDeadOrDying();
+        return ((ServerPlayer) (Object) this).isDeadOrDying();
     }
 
     public void grim$sendSystemText(Object nativeComponent) {
-        this.displayClientMessage((Component) nativeComponent, false);
+        ((ServerPlayer) (Object) this).displayClientMessage((Component) nativeComponent, false);
     }
 
     public boolean grim$isDisconnected() {
@@ -38,39 +39,39 @@ abstract class FabricIntermediaryServerPlayerMixin extends Player {
     }
 
     public String grim$usernameString() {
-        return this.getName().getString();
+        return ((ServerPlayer) (Object) this).getName().getString();
     }
 
     public void grim$broadcastInventoryChanges() {
-        this.containerMenu.broadcastChanges();
+        ((ServerPlayer) (Object) this).containerMenu.broadcastChanges();
     }
 
     public void grim$stopUsingItem() {
-        this.stopUsingItem();
+        ((ServerPlayer) (Object) this).stopUsingItem();
     }
 
     public boolean grim$isUsingItem() {
-        return this.isUsingItem();
+        return ((ServerPlayer) (Object) this).isUsingItem();
     }
 
     public double grim$posX() {
-        return this.getX();
+        return ((ServerPlayer) (Object) this).getX();
     }
 
     public double grim$posY() {
-        return this.getY();
+        return ((ServerPlayer) (Object) this).getY();
     }
 
     public double grim$posZ() {
-        return this.getZ();
+        return ((ServerPlayer) (Object) this).getZ();
     }
 
     public UUID grim$uuid() {
-        return this.getUUID();
+        return ((ServerPlayer) (Object) this).getUUID();
     }
 
     public Object grim$vehicleEntity() {
-        return this.getVehicle();
+        return ((ServerPlayer) (Object) this).getVehicle();
     }
 
     public Object grim$gameMode() {
@@ -78,18 +79,24 @@ abstract class FabricIntermediaryServerPlayerMixin extends Player {
     }
 
     public Object grim$heldItemStack() {
-        return this.inventory.getSelected();
+        return ((ServerPlayer) (Object) this).inventory.getSelected();
     }
 
     public Object grim$inventoryItemAt(int slot) {
-        return this.inventory.getItem(slot);
+        return ((ServerPlayer) (Object) this).inventory.getItem(slot);
     }
 
     public Object grim$usedItemHand() {
-        return this.getUsedItemHand();
+        return ((ServerPlayer) (Object) this).getUsedItemHand();
     }
 
     public int grim$inventorySlotCount() {
-        return this.inventory.getContainerSize();
+        return ((ServerPlayer) (Object) this).inventory.getContainerSize();
+    }
+
+    @Inject(method = "restoreFrom", at = @At("TAIL"))
+    private void onRestoreFrom(ServerPlayer oldPlayer, boolean alive, CallbackInfo ci) {
+        ((FabricPlatformPlayerFactory) GrimAPI.INSTANCE.getPlatformPlayerFactory())
+                .replaceNativePlayer(oldPlayer.getUUID(), (FabricServerPlayerHandle) (Object) this);
     }
 }
