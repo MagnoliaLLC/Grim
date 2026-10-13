@@ -55,7 +55,8 @@ jobs:
     build:
         runs-on: ${{ inputs.runner }}
         permissions:
-            contents: read
+            # Grant permission to write contents (for creating tags/refs)
+            contents: write
             pull-requests: read
 
         env:
@@ -260,26 +261,12 @@ jobs:
                     echo "EOF"
                   } >> "$GITHUB_OUTPUT"
 
-            - name: Publish Fabric to Modrinth
-              if: ${{ inputs.publish-artifacts == true && env.MODRINTH_ID != '' && env.MODRINTH_TOKEN != '' }}
-              uses: Kir-Antipov/mc-publish@v3.3
+            - name: Generate build number
+              if: contains(fromJSON('["merge","release","main","lightning"]'), github.ref_name) && inputs.publish-artifacts == true && env.MODRINTH_ID != '' && env.MODRINTH_TOKEN != ''
+              id: buildnumber
+              uses: onyxmueller/build-tag-number@v1
               with:
-                  modrinth-id: ${{ secrets.MODRINTH_ID }}
-                  modrinth-token: ${{ secrets.MODRINTH_TOKEN }}
-                  modrinth-featured: ${{ inputs.is-release-build }} # Only feature release builds
-
-                  files: fabric/build/libs/grimac-fabric-${{ env.BUILD_VERSION }}.jar
-                  name: Grim Anticheat (Fabric) ${{ env.BUILD_VERSION }}
-                  version: ${{ env.BUILD_VERSION }}
-                  version-type: ${{ inputs.release-version-type }}
-                  changelog: ${{ steps.changelog.outputs.notes }}
-                  loaders: |
-                      fabric
-                  # Union of both shipped variants (mc-publish reads the multi-line
-                  # scalar as OR). Keep in sync with fabric.mod.json depends.minecraft.
-                  game-versions: |
-                      >=1.16.1 <=26.3
-                  dependencies: 'fabric-api'
+                  token: ${{ secrets.GITHUB_TOKEN }}
 
             #------------------------------------------------------------------
             #  Publish to Modrinth & API
@@ -293,17 +280,38 @@ jobs:
                   modrinth-featured: ${{ inputs.is-release-build }} # Only feature release builds
 
                   files: bukkit/build/libs/grimac-bukkit-${{ env.BUILD_VERSION }}.jar
-                  name: Grim Anticheat (Bukkit) ${{ env.BUILD_VERSION }}
-                  version: ${{ env.BUILD_VERSION }}
+                  name: LightningGrim Anticheat (Bukkit) ${{ env.BUILD_VERSION }}-b${{ steps.buildnumber.outputs.build_number }}
+                  version: ${{ env.BUILD_VERSION }}-b${{ steps.buildnumber.outputs.build_number }}
                   version-type: ${{ inputs.release-version-type }}
                   changelog: ${{ steps.changelog.outputs.notes }}
                   loaders: |
-                    bukkit
-                    spigot
-                    paper
-                    folia
-                    purpur
+                      bukkit
+                      spigot
+                      paper
+                      folia
+                      purpur
                   game-versions: '>=1.7 <=26.3'
+
+            - name: Publish Fabric to Modrinth
+              if: ${{ inputs.publish-artifacts == true && env.MODRINTH_ID != '' && env.MODRINTH_TOKEN != '' }}
+              uses: Kir-Antipov/mc-publish@v3.3
+              with:
+                  modrinth-id:    ${{ secrets.MODRINTH_ID }}
+                  modrinth-token: ${{ secrets.MODRINTH_TOKEN }}
+                  modrinth-featured: ${{ inputs.is-release-build }} # Only feature release builds
+
+                  files: fabric/build/libs/grimac-fabric-${{ env.BUILD_VERSION }}.jar
+                  name: LightningGrim Anticheat (Fabric) ${{ env.BUILD_VERSION }}-b${{ steps.buildnumber.outputs.build_number }}
+                  version: ${{ env.BUILD_VERSION }}-b${{ steps.buildnumber.outputs.build_number }}
+                  version-type: ${{ inputs.release-version-type }}
+                  changelog: ${{ steps.changelog.outputs.notes }}
+                  loaders: |
+                      fabric
+                  # Union of both shipped variants. Keep in sync with fabric.mod.json depends.minecraft.
+                  game-versions: |
+                      >=1.16.1 <26
+                      >=26.1.2 <26.2
+                  dependencies: 'fabric-api'
 
             - name: Publish to API
               if: ${{ inputs.publish-artifacts == true && env.BUILD_UPDATE_TOKEN != '' && inputs.is-release-build == false }}
