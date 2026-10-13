@@ -29,6 +29,7 @@ on:
             - 'dev'
             - 'release'
             - 'release/**'
+            - 'lightning'
         paths:
             - 'bukkit/**'
             - 'common/**'
