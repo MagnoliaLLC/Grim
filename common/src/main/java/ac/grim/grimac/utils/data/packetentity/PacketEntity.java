@@ -17,6 +17,7 @@ package ac.grim.grimac.utils.data.packetentity;
 
 import com.github.retrooper.packetevents.protocol.vector.positionpath.PositionPath;
 import ac.grim.grimac.player.GrimPlayer;
+import ac.grim.grimac.utils.collisions.datatypes.CollisionBox;
 import ac.grim.grimac.utils.collisions.datatypes.SimpleCollisionBox;
 import ac.grim.grimac.utils.data.interpolation.EntityInterpolation;
 import ac.grim.grimac.utils.data.interpolation.EntityInterpolations;
@@ -234,6 +235,10 @@ public class PacketEntity extends TypedPacketEntity {
 
     public SimpleCollisionBox getPossibleCollisionBoxes() {
         return interpolation.hitbox(player, this);
+    }
+
+    public CollisionBox getMinimumPossibleCollisionBoxes() {
+        return getPossibleCollisionBoxes();
     }
 
     public OptionalInt getPotionEffectLevel(PotionType effect) {

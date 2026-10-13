@@ -7,6 +7,8 @@ import ac.grim.grimac.predictionengine.PlayerBaseTick;
 import ac.grim.grimac.utils.anticheat.update.*;
 import ac.grim.grimac.utils.blockplace.BlockPlaceResult;
 import ac.grim.grimac.utils.blockplace.ConsumesBlockPlace;
+import ac.grim.grimac.utils.data.BlockHitData;
+import ac.grim.grimac.utils.data.BlockPlaceSnapshot;
 import ac.grim.grimac.utils.change.BlockModification;
 import ac.grim.grimac.utils.data.*;
 import ac.grim.grimac.utils.inventory.Inventory;
@@ -52,7 +54,7 @@ public class CheckManagerListener extends PacketListenerAbstract {
     }
 
     private static void placeWaterLavaSnowBucket(GrimPlayer player, ItemStack held, StateType toPlace, InteractionHand hand, int sequence) {
-        HitData data = WorldRayTrace.getNearestBlockHitResult(player, StateTypes.AIR, false, true, true);
+        BlockHitData data = WorldRayTrace.getNearestBlockHitResult(player, StateTypes.AIR, false, true, true);
         if (data != null) {
             BlockPlace blockPlace = new BlockPlace(player, hand, data.position(), data.closestDirection().getFaceValue(), data.closestDirection(), held, data, sequence);
 
@@ -268,7 +270,7 @@ public class CheckManagerListener extends PacketListenerAbstract {
     }
 
     private static void placeBucket(GrimPlayer player, InteractionHand hand, int sequence) {
-        HitData data = WorldRayTrace.getNearestBlockHitResult(player, null, true, false, true);
+        BlockHitData data = WorldRayTrace.getNearestBlockHitResult(player, null, true, false, true);
 
         if (data != null) {
             BlockPlace blockPlace = new BlockPlace(player, hand, data.position(), data.closestDirection().getFaceValue(), data.closestDirection(), ItemStack.EMPTY, data, sequence);
@@ -347,7 +349,7 @@ public class CheckManagerListener extends PacketListenerAbstract {
     }
 
     private static void placeLilypad(GrimPlayer player, InteractionHand hand, int sequence) {
-        HitData data = WorldRayTrace.getNearestBlockHitResult(player, null, true, false, true);
+        BlockHitData data = WorldRayTrace.getNearestBlockHitResult(player, null, true, false, true);
 
         if (data != null) {
             // A lilypad cannot replace a fluid

@@ -38,6 +38,7 @@ import ac.grim.grimac.utils.data.packetentity.PacketEntitySelf;
 import ac.grim.grimac.utils.data.tags.SyncedTags;
 import ac.grim.grimac.utils.enums.FluidTag;
 import ac.grim.grimac.utils.enums.Pose;
+import ac.grim.grimac.utils.inventory.InventoryDesyncStatus;
 import ac.grim.grimac.utils.latency.*;
 import ac.grim.grimac.utils.math.GrimMath;
 import ac.grim.grimac.utils.math.Location;
@@ -47,6 +48,7 @@ import ac.grim.grimac.utils.nmsutil.BlockProperties;
 import ac.grim.grimac.utils.nmsutil.Collisions;
 import ac.grim.grimac.utils.nmsutil.GetBoundingBox;
 import ac.grim.grimac.utils.nmsutil.Materials;
+import ac.grim.grimac.utils.nmsutil.ReachUtils;
 import ac.grim.grimac.utils.nmsutil.StuckSpeed;
 import ac.grim.grimac.utils.viaversion.ViaVersionUtil;
 import com.github.retrooper.packetevents.PacketEvents;
@@ -247,6 +249,9 @@ public class GrimPlayer implements GrimUser {
     public final @NotNull Object2DoubleMap<FluidTag> fluidHeight = new Object2DoubleArrayMap<>(2);
     // possibleEyeHeights[0] = Standing eye heights, [1] = Sneaking. [2] = Elytra, Swimming, and Riptide Trident which only exists in 1.9+
     public final double[][] possibleEyeHeights = new double[3][];
+    public boolean hasInventoryOpen;
+    public long lastInventoryOpen;
+    public InventoryDesyncStatus inventoryDesyncStatus;
     public final @NotNull Queue<@NotNull BlockPlaceSnapshot> placeUseItemPackets = new LinkedBlockingQueue<>();
     public final @NotNull Queue<@NotNull BlockBreak> queuedBreaks = new LinkedBlockingQueue<>();
     public final @NotNull PlayerBlockHistory blockHistory = new PlayerBlockHistory();
@@ -709,6 +714,19 @@ public class GrimPlayer implements GrimUser {
                 default -> this.possibleEyeHeights[0]; // [standing height, sneaking height, swimming/gliding/riptide height]
             };
         }
+    }
+
+    public Vector3dm[] getPossibleLookVectors(boolean isPrediction) {
+        List<Vector3dm> possibleLookDirs = new ArrayList<>(Collections.singletonList(ReachUtils.getLook(this, this.yaw, this.pitch)));
+        if (!isPrediction) {
+            if (getClientVersion().isNewerThanOrEquals(ClientVersion.V_1_8)) {
+                possibleLookDirs.add(ReachUtils.getLook(this, this.lastYaw, this.pitch));
+                if (getClientVersion().isNewerThanOrEquals(ClientVersion.V_1_9)) {
+                    possibleLookDirs.add(ReachUtils.getLook(this, this.lastYaw, this.lastPitch));
+                }
+            }
+        }
+        return possibleLookDirs.toArray(new Vector3dm[0]);
     }
 
     @Override

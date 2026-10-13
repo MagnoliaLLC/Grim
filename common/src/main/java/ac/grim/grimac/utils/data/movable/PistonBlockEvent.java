@@ -2,7 +2,8 @@ package ac.grim.grimac.utils.data.movable;
 
 import ac.grim.grimac.utils.collisions.datatypes.SimpleCollisionBox;
 import ac.grim.grimac.player.GrimPlayer;
-import ac.grim.grimac.utils.data.PistonData;
+import ac.grim.grimac.utils.data.PistonTemplate;
+import ac.grim.grimac.utils.data.PlayerPistonData;
 import ac.grim.grimac.utils.reflection.GeyserUtil;
 import ac.grim.grimac.utils.data.movable.PistonStructure.Pos;
 import ac.grim.grimac.utils.data.movable.PistonStructure.Rules;
@@ -54,7 +55,7 @@ public final class PistonBlockEvent {
      * Handles a piston block event the client is getting now, on the netty thread, in transaction order. Returns the
      * push the client feels, or null when the client has no piston at the position.
      */
-    public static @Nullable PistonData handle(GrimPlayer player, int x, int y, int z, int action, int lastTransactionSent) {
+    public static @Nullable PlayerPistonData handle(GrimPlayer player, int x, int y, int z, int action, int lastTransactionSent) {
         CompensatedWorld world = player.compensatedWorld;
         WrappedBlockState piston = world.getBlock(x, y, z);
         StateType pistonType = piston.getType();
@@ -193,8 +194,8 @@ public final class PistonBlockEvent {
             }
         }
 
-        PistonData toData(Pos base, BlockFace direction, int lastTransactionSent, boolean isPush) {
-            return new PistonData(direction, boxes, lastTransactionSent, isPush, slime, honey);
+        PlayerPistonData toData(Pos base, BlockFace direction, int lastTransactionSent, boolean isPush) {
+            return new PlayerPistonData(new PistonTemplate(direction, boxes, isPush, slime, honey), lastTransactionSent);
         }
     }
 }
