@@ -9,6 +9,9 @@ import org.jetbrains.annotations.NotNull;
 
 // Copied directly from Hawk
 public record Ray(double originX, double originY, double originZ, double directionX, double directionY, double directionZ) implements Cloneable {
+    public Ray(@NotNull Vector3dm origin, @NotNull Vector3dm direction) {
+        this(origin.getX(), origin.getY(), origin.getZ(), direction.getX(), direction.getY(), direction.getZ());
+    }
 
     @Contract(value = "_, _, _, _, _, _ -> new", pure = true)
     public static @NotNull Ray from(@NotNull GrimPlayer player, double x, double y, double z, float yaw, float pitch) {
