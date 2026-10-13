@@ -63,7 +63,6 @@ public class BukkitGrimEntity implements GrimEntity {
         if (bukkitPlatformWorld == null || !bukkitPlatformWorld.bukkitWorld().equals(entity.getWorld())) {
             bukkitPlatformWorld = new BukkitPlatformWorld(entity.getWorld());
         }
-
         return bukkitPlatformWorld;
     }
 

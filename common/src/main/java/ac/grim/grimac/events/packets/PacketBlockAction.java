@@ -2,7 +2,7 @@ package ac.grim.grimac.events.packets;
 
 import ac.grim.grimac.GrimAPI;
 import ac.grim.grimac.player.GrimPlayer;
-import ac.grim.grimac.utils.data.PistonData;
+import ac.grim.grimac.utils.data.PlayerPistonData;
 import ac.grim.grimac.utils.data.ShulkerData;
 import ac.grim.grimac.utils.data.movable.PistonBlockEvent;
 import ac.grim.grimac.utils.nmsutil.Materials;
@@ -46,7 +46,7 @@ public class PacketBlockAction extends PacketListenerAbstract {
 
         player.latencyUtils.addRealTimeTask(transaction, () -> {
             WrappedBlockState existing = player.compensatedWorld.getBlock(blockPos);
-            PistonData piston = PistonBlockEvent.handle(
+            PlayerPistonData piston = PistonBlockEvent.handle(
                     player, blockPos.getX(), blockPos.getY(), blockPos.getZ(), actionId, transaction);
             if (piston != null) {
                 player.compensatedWorld.activePistons.add(piston);
