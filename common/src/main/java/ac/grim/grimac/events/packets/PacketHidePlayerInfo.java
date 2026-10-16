@@ -64,6 +64,7 @@ public class PacketHidePlayerInfo extends PacketListenerAbstract {
         } else if (event.getPacketType() == PacketType.Play.Server.PLAYER_INFO_UPDATE) {
             GrimPlayer receiver = GrimAPI.INSTANCE.getPlayerDataManager().getPlayer(event.getUser());
             if (receiver == null) return;
+            if (PlayerInfoActions.lacks(event, WrapperPlayServerPlayerInfoUpdate.Action.UPDATE_GAME_MODE)) return;
 
             WrapperPlayServerPlayerInfoUpdate wrapper = new WrapperPlayServerPlayerInfoUpdate(event);
             EnumSet<WrapperPlayServerPlayerInfoUpdate.Action> actions = wrapper.getActions();
