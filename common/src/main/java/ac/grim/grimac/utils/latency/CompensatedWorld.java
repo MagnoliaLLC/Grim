@@ -54,6 +54,7 @@ import it.unimi.dsi.fastutil.longs.Long2ObjectOpenHashMap;
 import it.unimi.dsi.fastutil.objects.Object2ObjectLinkedOpenHashMap;
 import lombok.Getter;
 
+import java.util.Arrays;
 import java.util.HashSet;
 import java.util.Iterator;
 import java.util.LinkedList;
@@ -65,6 +66,10 @@ import java.util.Set;
 public class CompensatedWorld implements PacketWorld {
     public static final ClientVersion blockVersion = PacketEvents.getAPI().getServerManager().getVersion().toClientVersion();
     private static final WrappedBlockState airData = WrappedBlockState.getByGlobalId(blockVersion, 0);
+    // Each global block state id's state for the server version, indexed directly: PacketEvents keeps them in a
+    // HashMap keyed by boxed ids, and collision and block lookups ask it for every block they touch.
+    // Ids it does not know stay null and are asked of PacketEvents as before.
+    private static final WrappedBlockState[] statesById = buildStateTable();
     public final GrimPlayer player;
     public final Long2ObjectMap<Column> chunks;
     // Packet locations for blocks
@@ -306,13 +311,16 @@ public class CompensatedWorld implements PacketWorld {
                 chunk.set(0, 0, 0, 0);
             }
 
-            WrappedBlockState previousState = chunk.get(blockVersion, x & 0xF, offsetY & 0xF, z & 0xF);
-            WrappedBlockState newState = WrappedBlockState.getByGlobalId(blockVersion, combinedID);
+            int previousId = chunk.getBlockId(x & 0xF, offsetY & 0xF, z & 0xF);
 
             // A resync that rewrites the same block is not a change.
             // Treating it as one would hand out the wall-hit exemption, a point-three
             // recalculation and a geyser update for free, so only process real changes.
-            if (previousState.getGlobalId() != combinedID) {
+            // The ids are compared first: most multi block change records repeat what is already there.
+            if (stateOf(previousId, false).getGlobalId() != combinedID) {
+                WrappedBlockState previousState = stateOf(previousId, true);
+                WrappedBlockState newState = stateOf(combinedID, true);
+
                 // The method also gets called for the previous state before replacement
                 player.pointThreeEstimator.handleChangeBlock(x, y, z, previousState);
 
@@ -451,6 +459,37 @@ public class CompensatedWorld implements PacketWorld {
         });
     }
 
+    private static WrappedBlockState[] buildStateTable() {
+        final WrappedBlockState unknown = WrappedBlockState.getByGlobalId(blockVersion, 0, false);
+        WrappedBlockState[] table = new WrappedBlockState[4096];
+        int length = 1;
+        // Ids are dense from zero; stop once a long run of ids is unknown
+        for (int id = 1, misses = 0; misses < 4096 && id < (1 << 17); id++) {
+            final WrappedBlockState state = WrappedBlockState.getByGlobalId(blockVersion, id, false);
+            if (state == unknown) {
+                misses++;
+                continue;
+            }
+            misses = 0;
+            if (id >= table.length) table = Arrays.copyOf(table, table.length * 2);
+            table[id] = state;
+            length = id + 1;
+        }
+        return Arrays.copyOf(table, length);
+    }
+
+    /**
+     * The state for a global block state id, exactly as {@code WrappedBlockState.getByGlobalId(blockVersion, id, clone)}
+     * answers it: the shared state when {@code clone} is false, so the caller must not change it.
+     */
+    public static WrappedBlockState stateOf(int id, boolean clone) {
+        if (id > 0 && id < statesById.length) {
+            final WrappedBlockState state = statesById[id];
+            if (state != null) return clone ? state.clone() : state;
+        }
+        return WrappedBlockState.getByGlobalId(blockVersion, id, clone);
+    }
+
     public WrappedBlockState getBlock(Vector3i position) {
         return getBlock(position.x, position.y, position.z);
     }
@@ -466,7 +505,7 @@ public class CompensatedWorld implements PacketWorld {
 
             BaseChunk chunk = column.chunks()[y >> 4];
             if (chunk != null) {
-                return chunk.get(blockVersion, x & 0xF, y & 0xF, z & 0xF);
+                return stateOf(chunk.getBlockId(x & 0xF, y & 0xF, z & 0xF), true);
             }
         } catch (Exception ignored) {
         }

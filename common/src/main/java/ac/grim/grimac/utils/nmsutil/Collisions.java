@@ -314,7 +314,7 @@ public final class Collisions {
                             int x = currX | chunkXGlobalPos;
                             int z = currZ | chunkZGlobalPos;
 
-                            WrappedBlockState data = section.get(CompensatedWorld.blockVersion, x & 0xF, y & 0xF, z & 0xF, false);
+                            WrappedBlockState data = CompensatedWorld.stateOf(section.getBlockId(x & 0xF, y & 0xF, z & 0xF), false);
 
                             // Works on both legacy and modern!  Faster than checking for material types, most common case
                             if (data.getGlobalId() == 0) continue;
@@ -768,7 +768,7 @@ public final class Collisions {
                             int x = currX | chunkXGlobalPos;
                             int z = currZ | chunkZGlobalPos;
 
-                            WrappedBlockState data = section.get(CompensatedWorld.blockVersion, x & 0xF, y & 0xF, z & 0xF, false);
+                            WrappedBlockState data = CompensatedWorld.stateOf(section.getBlockId(x & 0xF, y & 0xF, z & 0xF), false);
 
                             if (searchingFor.test(data, x, y, z))
                                 return true;
@@ -833,7 +833,7 @@ public final class Collisions {
                             int x = currX | chunkXGlobalPos;
                             int z = currZ | chunkZGlobalPos;
 
-                            WrappedBlockState data = section.get(CompensatedWorld.blockVersion, x & 0xF, y & 0xF, z & 0xF, false);
+                            WrappedBlockState data = CompensatedWorld.stateOf(section.getBlockId(x & 0xF, y & 0xF, z & 0xF), false);
 
                             // Works on both legacy and modern!  Faster than checking for material types, most common case
                             if (data.getGlobalId() == 0) continue;
