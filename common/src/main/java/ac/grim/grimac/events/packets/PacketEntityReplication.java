@@ -209,6 +209,7 @@ public class PacketEntityReplication extends GrimProcessor implements PacketRece
 
         // 1.19.3+
         else if (event.getPacketType() == PacketType.Play.Server.PLAYER_INFO_UPDATE) {
+            if (PlayerInfoActions.lacks(event, WrapperPlayServerPlayerInfoUpdate.Action.ADD_PLAYER)) return;
             WrapperPlayServerPlayerInfoUpdate info = new WrapperPlayServerPlayerInfoUpdate(event);
             if (info.getActions().contains(WrapperPlayServerPlayerInfoUpdate.Action.ADD_PLAYER)) {
                 player.latencyUtils.addRealTimeTask(player.lastTransactionSent.get(), () -> {
