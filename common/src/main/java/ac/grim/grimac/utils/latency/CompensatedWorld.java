@@ -28,8 +28,12 @@ import com.github.retrooper.packetevents.protocol.world.chunk.TileEntity;
 import com.github.retrooper.packetevents.protocol.world.chunk.impl.v1_16.Chunk_v1_9;
 import com.github.retrooper.packetevents.protocol.world.chunk.impl.v_1_18.Chunk_v1_18;
 import com.github.retrooper.packetevents.protocol.world.chunk.palette.DataPalette;
+import com.github.retrooper.packetevents.protocol.world.chunk.palette.GlobalPalette;
 import com.github.retrooper.packetevents.protocol.world.chunk.palette.ListPalette;
+import com.github.retrooper.packetevents.protocol.world.chunk.palette.Palette;
 import com.github.retrooper.packetevents.protocol.world.chunk.palette.PaletteType;
+import com.github.retrooper.packetevents.protocol.world.chunk.storage.BaseStorage;
+import com.github.retrooper.packetevents.protocol.world.chunk.storage.BitStorage;
 import com.github.retrooper.packetevents.protocol.world.chunk.storage.LegacyFlexibleStorage;
 import com.github.retrooper.packetevents.protocol.world.dimension.DimensionType;
 import com.github.retrooper.packetevents.protocol.world.states.WrappedBlockState;
@@ -55,6 +59,7 @@ import it.unimi.dsi.fastutil.longs.Long2ObjectOpenHashMap;
 import it.unimi.dsi.fastutil.objects.Object2ObjectLinkedOpenHashMap;
 import lombok.Getter;
 
+import java.util.Arrays;
 import java.util.HashSet;
 import java.util.Iterator;
 import java.util.LinkedList;
@@ -66,6 +71,10 @@ import java.util.Set;
 public class CompensatedWorld implements PacketWorld {
     public static final ClientVersion blockVersion = PacketEvents.getAPI().getServerManager().getVersion().toClientVersion();
     private static final WrappedBlockState airData = WrappedBlockState.getByGlobalId(blockVersion, 0);
+    // Each global block state id's state for the server version, indexed directly: PacketEvents keeps them in a
+    // HashMap keyed by boxed ids, and collision and block lookups ask it for every block they touch.
+    // Ids it does not know stay null and are asked of PacketEvents as before.
+    private static final WrappedBlockState[] statesById = buildStateTable();
     public final GrimPlayer player;
     public final Long2ObjectMap<Column> chunks;
     // Packet locations for blocks
@@ -255,6 +264,51 @@ public class CompensatedWorld implements PacketWorld {
         return false;
     }
 
+    /**
+     * PacketEvents sizes the global palette for 15 bit ids, but 26.3 has more block states than 15 bits hold
+     * (the server sends 16 bit global palettes), so writing such an id into a section that switches to the global
+     * palette, or already holds 15 bit global storage, threw out of BitStorage#set. Before such a write the section
+     * moves to global storage wide enough for every id in it; anything PacketEvents' own resize handles is left alone.
+     */
+    static void fitGlobalPalette(BaseChunk chunk, int combinedID) {
+        if (!(chunk instanceof Chunk_v1_18)) return;
+
+        DataPalette data = ((Chunk_v1_18) chunk).getChunkData();
+        BaseStorage storage = data.storage;
+        if (storage == null) return; // a singleton palette grows into a list palette
+
+        int highest = combinedID;
+        if (data.palette instanceof GlobalPalette) {
+            if (bitsFor(highest) <= storage.getBitsPerEntry()) return;
+        } else {
+            int size = data.palette.size();
+            if (size < 1 << data.palette.getBits()) return; // the palette has room for the id
+            if (storage.getBitsPerEntry() + 1 <= data.paletteType.getMaxBitsPerEntryForMap()) return; // grows into a map palette
+
+            for (int id = 0; id < size; id++) {
+                int state = data.palette.idToState(id);
+                if (state == combinedID) return; // already in the palette
+                highest = Math.max(highest, state);
+            }
+
+            if (bitsFor(highest) <= GlobalPalette.BITS_PER_ENTRY) return;
+        }
+
+        Palette old = data.palette;
+        int length = data.paletteType.getStorageSize();
+        BitStorage widened = new BitStorage(bitsFor(highest), length);
+        for (int i = 0; i < length; i++) {
+            widened.set(i, old.idToState(storage.get(i)));
+        }
+
+        data.palette = GlobalPalette.INSTANCE;
+        data.storage = widened;
+    }
+
+    private static int bitsFor(int id) {
+        return Math.max(1, 32 - Integer.numberOfLeadingZeros(id));
+    }
+
     private static BaseChunk create() {
         if (PacketEvents.getAPI().getServerManager().getVersion().isNewerThanOrEquals(ServerVersion.V_1_18)) {
             return new Chunk_v1_18();
@@ -309,18 +363,22 @@ public class CompensatedWorld implements PacketWorld {
                 chunk.set(0, 0, 0, 0);
             }
 
-            WrappedBlockState previousState = chunk.get(blockVersion, x & 0xF, offsetY & 0xF, z & 0xF);
-            WrappedBlockState newState = WrappedBlockState.getByGlobalId(blockVersion, combinedID);
+            int previousId = chunk.getBlockId(x & 0xF, offsetY & 0xF, z & 0xF);
 
             // A resync that rewrites the same block is not a change.
             // Treating it as one would hand out the wall-hit exemption, a point-three
             // recalculation and a geyser update for free, so only process real changes.
-            if (previousState.getGlobalId() != combinedID) {
+            // The ids are compared first: most multi block change records repeat what is already there.
+            if (stateOf(previousId, false).getGlobalId() != combinedID) {
+                WrappedBlockState previousState = stateOf(previousId, true);
+                WrappedBlockState newState = stateOf(combinedID, true);
+
                 // The method also gets called for the previous state before replacement
                 player.pointThreeEstimator.handleChangeBlock(x, y, z, previousState);
 
                 // Copy-on-write: never mutate a shared section in place
                 chunk = ChunkSectionCache.detachSectionForWrite(column, sectionIndex, chunk);
+                fitGlobalPalette(chunk, combinedID);
                 chunk.set(x & 0xF, offsetY & 0xF, z & 0xF, combinedID);
                 player.compensatedGeysers.updateBlock(x, y, z, previousState, newState, minHeight);
 
@@ -456,6 +514,37 @@ public class CompensatedWorld implements PacketWorld {
         });
     }
 
+    private static WrappedBlockState[] buildStateTable() {
+        final WrappedBlockState unknown = WrappedBlockState.getByGlobalId(blockVersion, 0, false);
+        WrappedBlockState[] table = new WrappedBlockState[4096];
+        int length = 1;
+        // Ids are dense from zero; stop once a long run of ids is unknown
+        for (int id = 1, misses = 0; misses < 4096 && id < (1 << 17); id++) {
+            final WrappedBlockState state = WrappedBlockState.getByGlobalId(blockVersion, id, false);
+            if (state == unknown) {
+                misses++;
+                continue;
+            }
+            misses = 0;
+            if (id >= table.length) table = Arrays.copyOf(table, table.length * 2);
+            table[id] = state;
+            length = id + 1;
+        }
+        return Arrays.copyOf(table, length);
+    }
+
+    /**
+     * The state for a global block state id, exactly as {@code WrappedBlockState.getByGlobalId(blockVersion, id, clone)}
+     * answers it: the shared state when {@code clone} is false, so the caller must not change it.
+     */
+    public static WrappedBlockState stateOf(int id, boolean clone) {
+        if (id > 0 && id < statesById.length) {
+            final WrappedBlockState state = statesById[id];
+            if (state != null) return clone ? state.clone() : state;
+        }
+        return WrappedBlockState.getByGlobalId(blockVersion, id, clone);
+    }
+
     public WrappedBlockState getBlock(Vector3i position) {
         return getBlock(position.x, position.y, position.z);
     }
@@ -471,7 +560,7 @@ public class CompensatedWorld implements PacketWorld {
 
             BaseChunk chunk = column.chunks()[y >> 4];
             if (chunk != null) {
-                return chunk.get(blockVersion, x & 0xF, y & 0xF, z & 0xF);
+                return stateOf(chunk.getBlockId(x & 0xF, y & 0xF, z & 0xF), true);
             }
         } catch (Exception ignored) {
         }
