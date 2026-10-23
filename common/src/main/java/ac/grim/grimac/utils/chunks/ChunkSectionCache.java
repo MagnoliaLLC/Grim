@@ -3,15 +3,23 @@ package ac.grim.grimac.utils.chunks;
 import ac.grim.grimac.GrimAPI;
 import ac.grim.grimac.utils.latency.CompensatedWorld;
 import com.github.retrooper.packetevents.protocol.world.chunk.BaseChunk;
+import com.github.retrooper.packetevents.protocol.world.chunk.ByteArray3d;
+import com.github.retrooper.packetevents.protocol.world.chunk.NibbleArray3d;
+import com.github.retrooper.packetevents.protocol.world.chunk.ShortArray3d;
 import com.github.retrooper.packetevents.protocol.world.chunk.impl.v1_16.Chunk_v1_9;
 import com.github.retrooper.packetevents.protocol.world.chunk.impl.v1_7.Chunk_v1_7;
 import com.github.retrooper.packetevents.protocol.world.chunk.impl.v1_8.Chunk_v1_8;
 import com.github.retrooper.packetevents.protocol.world.chunk.impl.v_1_18.Chunk_v1_18;
 import com.github.retrooper.packetevents.protocol.world.chunk.palette.DataPalette;
 import com.github.retrooper.packetevents.protocol.world.chunk.palette.GlobalPalette;
+import com.github.retrooper.packetevents.protocol.world.chunk.palette.ListPalette;
+import com.github.retrooper.packetevents.protocol.world.chunk.palette.MapPalette;
 import com.github.retrooper.packetevents.protocol.world.chunk.palette.Palette;
 import com.github.retrooper.packetevents.protocol.world.chunk.palette.PaletteType;
+import com.github.retrooper.packetevents.protocol.world.chunk.palette.SingletonPalette;
 import com.github.retrooper.packetevents.protocol.world.chunk.storage.BaseStorage;
+import com.github.retrooper.packetevents.protocol.world.chunk.storage.BitStorage;
+import com.github.retrooper.packetevents.protocol.world.chunk.storage.LegacyFlexibleStorage;
 
 import java.lang.invoke.MethodHandle;
 import java.lang.invoke.MethodHandles;
@@ -24,12 +32,14 @@ public final class ChunkSectionCache {
 
     // Optimization n.4: PacketEvents does not expose Chunk_v1_9's DataPalette.
     // A MethodHandle getter compiles down to a plain field load after JIT warmup.
-    private static final MethodHandle V1_9_DATA = resolveV19DataPalette();
+    private static final MethodHandle V1_9_DATA = resolveV19Getter("dataPalette", DataPalette.class);
+    // Nor its block count, which a copy of the section has to keep.
+    private static final MethodHandle V1_9_BLOCK_COUNT = resolveV19Getter("blockCount", int.class);
 
-    private static MethodHandle resolveV19DataPalette() {
+    private static MethodHandle resolveV19Getter(String field, Class<?> type) {
         try {
             return MethodHandles.privateLookupIn(Chunk_v1_9.class, MethodHandles.lookup())
-                    .findGetter(Chunk_v1_9.class, "dataPalette", DataPalette.class);
+                    .findGetter(Chunk_v1_9.class, field, type);
         } catch (Throwable t) {
             return null;
         }
@@ -42,6 +52,14 @@ public final class ChunkSectionCache {
             return (DataPalette) V1_9_DATA.invokeExact(section);
         } catch (Throwable t) {
             throw new IllegalStateException("Chunk_v1_9.dataPalette accessor failed", t);
+        }
+    }
+
+    private static int v19BlockCount(Chunk_v1_9 section) {
+        try {
+            return (int) V1_9_BLOCK_COUNT.invokeExact(section);
+        } catch (Throwable t) {
+            throw new IllegalStateException("Chunk_v1_9.blockCount accessor failed", t);
         }
     }
 
@@ -272,28 +290,104 @@ public final class ChunkSectionCache {
         return true;
     }
 
+    // Clones the section: same palette, same storage at the same bit width, same block and fluid counts.
+    // Replaying 4096 set() calls into an empty section did not give the same section back. Every cell of an
+    // empty palette reads its first entry, so set() counted blocks against the wrong state (an all-air section
+    // took its first block into all 4096 cells and kept a block count of 0, which Collisions skips), and the
+    // palette grew back through PacketEvents' 15 bit global palette, which cannot hold 26.3's block ids.
     public static BaseChunk copySection(BaseChunk source) {
-        if (source.isEmpty()) return emptySectionLike(source);
-        return copySection(source, emptySectionLike(source));
+        if (source instanceof Chunk_v1_18 chunk) {
+            return new Chunk_v1_18(chunk.getBlockCount(), chunk.getFluidCount(),
+                    copyData(chunk.getChunkData()), copyData(chunk.getBiomeData()));
+        }
+
+        if (source instanceof Chunk_v1_9 chunk) return copyV19(chunk);
+
+        if (source instanceof Chunk_v1_8 chunk) {
+            return new Chunk_v1_8(new ShortArray3d(chunk.getBlocks().getData().clone()),
+                    copyNibbles(chunk.getBlockLight()), copyNibbles(chunk.getSkyLight()));
+        }
+
+        if (source instanceof Chunk_v1_7 chunk) {
+            return new Chunk_v1_7(new ByteArray3d(chunk.getBlocks().getData().clone()), copyNibbles(chunk.getMetadata()),
+                    copyNibbles(chunk.getBlockLight()), copyNibbles(chunk.getSkyLight()), copyNibbles(chunk.getExtendedBlocks()));
+        }
+
+        throw new IllegalArgumentException("Unsupported section type: " + source.getClass());
     }
 
-    private static BaseChunk copySection(BaseChunk source, BaseChunk empty) {
+    private static Chunk_v1_9 copyV19(Chunk_v1_9 section) {
+        DataPalette data = v19Data(section);
+
+        if (data != null && V1_9_BLOCK_COUNT != null) {
+            return new Chunk_v1_9(v19BlockCount(section), copyData(data),
+                    copyNibbles(section.getBlockLight()), copyNibbles(section.getSkyLight()));
+        }
+
+        // MethodHandles unavailable (newer PacketEvents moved the fields): rebuild cell by cell.
+        // Setting a block first puts air in palette slot 0, as CompensatedWorld.create() does,
+        // so the copy starts as real air and set() counts every block written into it.
+        Chunk_v1_9 copy = new Chunk_v1_9(0, PaletteType.CHUNK.create());
+        copy.set(0, 0, 0, 0);
+
         for (int y = 0; y < 16; y++) {
             for (int z = 0; z < 16; z++) {
                 for (int x = 0; x < 16; x++) {
-                    empty.set(x, y, z, source.getBlockId(x, y, z));
+                    copy.set(x, y, z, section.getBlockId(x, y, z));
                 }
             }
         }
-        return empty;
+
+        return copy;
     }
 
-    private static BaseChunk emptySectionLike(BaseChunk source) {
-        if (source instanceof Chunk_v1_18) return new Chunk_v1_18();
-        if (source instanceof Chunk_v1_9) return new Chunk_v1_9(0, PaletteType.CHUNK.create());
-        if (source instanceof Chunk_v1_8) return new Chunk_v1_8(true);
-        if (source instanceof Chunk_v1_7) return new Chunk_v1_7(true, true);
-        throw new IllegalArgumentException("Unsupported section type: " + source.getClass());
+    private static DataPalette copyData(DataPalette data) {
+        if (data == null) return null; // biomes are dropped when the chunk is read
+
+        return new DataPalette(copyPalette(data.palette), copyStorage(data.storage), data.paletteType);
+    }
+
+    private static Palette copyPalette(Palette palette) {
+        // Neither changes after creation: a state a singleton palette lacks replaces the palette
+        if (palette instanceof GlobalPalette || palette instanceof SingletonPalette) return palette;
+
+        int[] states = new int[palette.size()];
+        for (int id = 0; id < states.length; id++) {
+            states[id] = palette.idToState(id);
+        }
+
+        if (palette instanceof ListPalette) return new ListPalette(palette.getBits(), states);
+
+        if (palette instanceof MapPalette) {
+            MapPalette copy = new MapPalette(palette.getBits());
+
+            for (int id = 0; id < states.length; id++) {
+                // A repeated entry would shift every id after it; a list palette keeps them all in place
+                if (copy.stateToId(states[id]) != id) return new ListPalette(palette.getBits(), states);
+            }
+
+            return copy;
+        }
+
+        throw new IllegalArgumentException("Unsupported palette type: " + palette.getClass());
+    }
+
+    private static BaseStorage copyStorage(BaseStorage storage) {
+        if (storage == null) return null; // SingletonPalette doesn't hold a storage
+
+        if (storage instanceof BitStorage bits) {
+            return new BitStorage(bits.getBitsPerEntry(), bits.getSize(), bits.getData().clone());
+        }
+
+        if (storage instanceof LegacyFlexibleStorage legacy) {
+            return new LegacyFlexibleStorage(legacy.getBitsPerEntry(), legacy.getData().clone());
+        }
+
+        throw new IllegalArgumentException("Unsupported storage type: " + storage.getClass());
+    }
+
+    private static NibbleArray3d copyNibbles(NibbleArray3d nibbles) {
+        return nibbles == null ? null : new NibbleArray3d(nibbles.getData().clone());
     }
 
     // Merges a partial (non ground-up) section update into an existing column.
